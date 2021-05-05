@@ -1,0 +1,990 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Convolutional Neural Networks: Application\n",
+    "\n",
+    "Welcome to Course 4's second assignment! In this notebook, you will:\n",
+    "\n",
+    "- Create a mood classifer using the TF Keras Sequential API\n",
+    "- Build a ConvNet to identify sign language digits using the TF Keras Functional API\n",
+    "\n",
+    "**After this assignment you will be able to:**\n",
+    "\n",
+    "- Build and train a ConvNet in TensorFlow for a __binary__ classification problem\n",
+    "- Build and train a ConvNet in TensorFlow for a __multiclass__ classification problem\n",
+    "- Explain different use cases for the Sequential and Functional APIs\n",
+    "\n",
+    "To complete this assignment, you should already be familiar with TensorFlow. If you are not, please refer back to the **TensorFlow Tutorial** of the third week of Course 2 (\"**Improving deep neural networks**\")."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Table of Contents\n",
+    "\n",
+    "- [1 - Packages](#1)\n",
+    "    - [1.1 - Load the Data and Split the Data into Train/Test Sets](#1-1)\n",
+    "- [2 - Layers in TF Keras](#2)\n",
+    "- [3 - The Sequential API](#3)\n",
+    "    - [3.1 - Create the Sequential Model](#3-1)\n",
+    "        - [Exercise 1 - happyModel](#ex-1)\n",
+    "    - [3.2 - Train and Evaluate the Model](#3-2)\n",
+    "- [4 - The Functional API](#4)\n",
+    "    - [4.1 - Load the SIGNS Dataset](#4-1)\n",
+    "    - [4.2 - Split the Data into Train/Test Sets](#4-2)\n",
+    "    - [4.3 - Forward Propagation](#4-3)\n",
+    "        - [Exercise 2 - convolutional_model](#ex-2)\n",
+    "    - [4.4 - Train the Model](#4-4)\n",
+    "- [5 - History Object](#5)\n",
+    "- [6 - Bibliography](#6)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a name='1'></a>\n",
+    "## 1 - Packages\n",
+    "\n",
+    "As usual, begin by loading in the packages."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 136,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import math\n",
+    "import numpy as np\n",
+    "import h5py\n",
+    "import matplotlib.pyplot as plt\n",
+    "from matplotlib.pyplot import imread\n",
+    "import scipy\n",
+    "from PIL import Image\n",
+    "import pandas as pd\n",
+    "import tensorflow as tf\n",
+    "import tensorflow.keras.layers as tfl\n",
+    "from tensorflow.python.framework import ops\n",
+    "from cnn_utils import *\n",
+    "from test_utils import summary, comparator\n",
+    "\n",
+    "%matplotlib inline\n",
+    "np.random.seed(1)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a name='1-1'></a>\n",
+    "### 1.1 - Load the Data and Split the Data into Train/Test Sets\n",
+    "\n",
+    "You'll be using the Happy House dataset for this part of the assignment, which contains images of peoples' faces. Your task will be to build a ConvNet that determines whether the people in the images are smiling or not -- because they only get to enter the house if they're smiling!  "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 137,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "number of training examples = 600\n",
+      "number of test examples = 150\n",
+      "X_train shape: (600, 64, 64, 3)\n",
+      "Y_train shape: (600, 1)\n",
+      "X_test shape: (150, 64, 64, 3)\n",
+      "Y_test shape: (150, 1)\n"
+     ]
+    }
+   ],
+   "source": [
+    "X_train_orig, Y_train_orig, X_test_orig, Y_test_orig, classes = load_happy_dataset()\n",
+    "\n",
+    "# Normalize image vectors\n",
+    "X_train = X_train_orig/255.\n",
+    "X_test = X_test_orig/255.\n",
+    "\n",
+    "# Reshape\n",
+    "Y_train = Y_train_orig.T\n",
+    "Y_test = Y_test_orig.T\n",
+    "\n",
+    "print (\"number of training examples = \" + str(X_train.shape[0]))\n",
+    "print (\"number of test examples = \" + str(X_test.shape[0]))\n",
+    "print (\"X_train shape: \" + str(X_train.shape))\n",
+    "print (\"Y_train shape: \" + str(Y_train.shape))\n",
+    "print (\"X_test shape: \" + str(X_test.shape))\n",
+    "print (\"Y_test shape: \" + str(Y_test.shape))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "You can display the images contained in the dataset. Images are **64x64** pixels in RGB format (3 channels)."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 138,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "image/png": "iVBORw0KGgoAAAANSUhEUgAAAPsAAAD7CAYAAACscuKmAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAALEgAACxIB0t1+/AAAADh0RVh0U29mdHdhcmUAbWF0cGxvdGxpYiB2ZXJzaW9uMy4yLjEsIGh0dHA6Ly9tYXRwbG90bGliLm9yZy+j8jraAAAgAElEQVR4nO29aaxl13UeuNY5d75vnqpezaRYnERJlEXJsqWOadFKqxUjAhpwYANpqBsC+MfdcNBpRFIHCJAACRQECJIf6QaIjjtC2x234MSRYKQtsxkrUVuKxCIpikOxWMWaq169ebjzPcPOj3vrrm+t9+6tR1bVfUXd/QEPb5+799lnn2Gfs9Zea32LnXPk4eHxi4/goAfg4eExHPjJ7uExIvCT3cNjROAnu4fHiMBPdg+PEYGf7B4eI4K7muzM/CVmPsfMF5j5G/dqUB4eHvce/EHt7MwcEtG7RPRFIrpORC8T0e84596+d8Pz8PC4V8jcxb6fIaILzrmLRETM/EdE9BUi6jvZp6Yn3ZGjh7tbrCtTeekklKqqMIBhOqkLQt1HJpR2aapfYmEgQkySJL1yHMeqXRCG0i7V48hmpC6FcaSmneovCNU2w5BDM37VJ7yEs2HO9CH7MZn+QViLnZxb6hIyDffch4gow/hYOCjpa4r7sb2fsO3gvJgHCZPObMl2Cs9EaM4ZEVNbbQcwjgTGQazvGY4+Q/kB4xo0/v2fm4a9dh8cly9fprW1tT07vJvJfpSIrsH2dSL65UE7HDl6mP7gj/83IiIKgqyqi2tRr1xJGqpuemKhV07a9V65OKn7WJic6ZXr1UjVTZTHpf/t7V55ZWNNtSuPTUq7ekXVzc9P9MqtWMZRqekHjOFFMwbHJSLK5qVu0oy/3pI+q20Z/+Gpk6pdLiOTP8+Tqi7kYq+82dzolWvJhmqXZuR5KIRjqm46nIEteUkkTp9nyGUpkz6XAF5IUST7ZTN6IuGLKyV9z1I4di2t9spjwQRpyDXdSpdUTQ7GVUl3YID6GSuwvEAm6ZTuHl4MARWpH3jXSwJHGKmWer9+09C+ILhPWfDMM5/uO4a70dn3Otqu1xczP8/MZ5j5zObm1l0czsPD425wN1/260R0HLaPEdFN28g59wIRvUBE9PQnn3LHF48REVEzqal2N+vLvXKtqUXruWl5Y1ba8iUuBvOq3dm3L/fK87PTqo5T+bpMTsl+tUZVtSsX5Ws1Oa6/eO+cP98rR035Mjz8kROqXTNqSn/5kqqrknxdqi39JcuTHHtxQsqZQL9XVytyrSaK+gWaD2Z75WJQkN/DQ6rdSntV+mvqr74rwvVnGWMh0OpEmeW+MOtHCUX8XBa/ePp7kMAXzxn1rZbIvWmTXNOG+aQU4Lplzdc1ALUhC1/5lpEeMyBxpKTrApLr6Eg/m3hnnFJr+qsa+xXb7fXQfb7/tba7+bK/TESnmfkhZs4R0W8T0ffuoj8PD4/7iA/8ZXfOxcz8PxLR94koJKLfd869dc9G5uHhcU9xN2I8Oef+PRH9+3s0Fg8Pj/uIu5rs7xvsKMx1dLS80/pfvS06WUur0XT92tVeudEWnbdQ1Dr18pLosouHtM5+65bo+pmsrKiOTZdVu1JWxtVs7qi6sZLoTLlJ0YFLJd3HdF5Ws3M5rbO7uqwdONbrFhMlGbNzoss2mrpdJpBV6ozTq8OBw1squmHo9K3OtOU8x7Nah9xqiLViuizjKAWHVbsA9G02q/FoNkvAHBYanTqC84yNHtoGLbOSoOlN6805uB5obiQi2k7kvrdTPBd93arxZq/cNPdlKpSlqSwXSKPfCrnVqXG7bepsn7t76/SQQJ1dE0h7rfrBu8t6eIwI/GT38BgRDFWMZya6bQnZqm7quoKIacs3rum6nIgvxx891Suvreo+yuMiIlaNo8u756XPQkHE/1akRXVKxXp49Kg2qS0emuuVazURskpFrTLkcnJZ8znjABK0esV6ZLy9wJQVguNI1vhxFFMRs53xSEPnjRw43CTGyW8qJ+cSuZaqK8AYWztgouNl1W5qTEyYhYweB4OTCno9Rsas1QapMzDmuzKYDoss94zBDEdEtAFmRGOlpJWGmCZriThJLZZmVbsCTIWUt1UdhfIc7FZXYijj/bRidtCnbNFfDEdzpjMOSI5u37MB3pwDjurh4fELBD/ZPTxGBH6ye3iMCIaqs6dJQo3tjg4Vt7XeNRaKrhK3dQDK8Y9IIMjctOhu5984r9rtrEkgSZToKK+Jw6JrYbRZNjGBGYHoQhsb66ouV5T9grzsF5uAsnJWdGXnbGSbnGdkdPYrOxIwOF4Qnbqc18Euy8tiTlrbqKu6azev9MrNmhwrMCavuXkxo0WJ1v9W11d65Qbci4kJ3cfioaO98qMPH1V1s3MQeBSJHjlW0OsbGLgTGmMTar2VWJ6XgokWvLUj7r43t6+qugjMaPmc9BhltEl0rCBrJGlqp4WM30b+4fey7WQcOdZrAgz72cAX64KLe+1/6/Z17P/99l92D48RgZ/sHh4jguGa3iikQqYjkhaaWvYtzEnM+pEndIz50099rFdemBLPtYXComr3lz/6y165NKlNHxhHfWtJzGuVmnbXO/awiJntljZj1OvybsyPy6XLFrTaUV2VPksFLS6iV976ujZDnX33XK8cQrz/xpoW919/85L0saHNRM2WtG23MaJMv9fzeTFr5XLamzGK5byzWTnP2UntsXh4QUxxO5vahPnIk6d65XogImymtKLaTZRFfJ4vaFUgTkW8XaqASXRMRzte3RTRfceYdHMFeQ5mwNMxaep722ZRExZKmj8gyzLGQfFqGTCdOmNiZBpTW2Rq967pf7T+MfD99/Ffdg+PEYGf7B4eI4LhBsIEAcW5jvg4NqFXK4NQxNbHH9crnttN8ZDKNGTIi4sLqt1v/rX/ulfe2DE8GhAg4WblWOs7hq4JtIu1NV03Py0r2AlLw62aFk0jEBGzgV7BvnzxQq986b3Lqu7aDTnPzS0RA1fXNUFFC1a3my3t/RZZ08BtWO63Wq1/HXi/5bJyrdrmWK0meNqZurUNEesf+diRXrmc1dfjxpKoQJtlrVK1AxljrSr9zRa0F9vihKheBfNEF+CHyZJYCErm0W8B4Ugr0WpZJpiSspGScSU9Bc++cFdwC3L5WQKMEOqcqukHy/knHnXeg87DY+ThJ7uHx4jAT3YPjxHBcD3oXELNqGMqypE292TAxFMItb6TAB98G6ik1917ql0pI55muVCbvLYbQjGcyYu+ky/q9YFcXkwk5QndR9ySMddaQKKR0Sap8SnZfutV7eX3w//wo155Y0vrhqsbsl1tAMFiXXsbJuCFZ3N8ODTjAFd+EJioNMVnb3RDqEvBu44N97wD09jmjj6Xy9fkeq9tPtIr/8Zzn1XtPnby0V55ta6j6m7tiAl2Zgyi0gJ9rCCV56WdaH24Bh6GuB7TMFz/DOZBCrXn5EIg93M8oz0AE6c9GHu/G73csYzZEng45SvY//vrFFmIXRPor6vfuWcPD49fKPjJ7uExIhiu6c2l5JKOiabR1l5hy+ti5nrv8kVVVwKyickpEa0np3W2lcl58ZA6NK+9sSLwVru+JKJ1q6Hfd/PTIh7NTGmRbQeCMVLYr97WnGW3Kjd65R/98Eeq7tx5CFQxvPGYsSqC69Nqa7OWSm3FA7yxeJAYH+zZrlvZKzpIh9VItRifxDLGfE6LpjUwxb3+pqhbh49OqXYLx+UeJjltejt1QjwkGTK4LG3dUu1uVSFIJq+vR60iY9zZFtWrmdHncnLuoV7Zmks3IyA+MewYbSceezkI6omNmpABIg42qadSkmsVAuGIJcogxbGvPURjt9z9XT9TCP9l9/AYEfjJ7uExIvCT3cNjRDBUnd2lRGmto684Z6LSYnnvPHrsIVW3uibuoivXpbxjIr5yLKaxxXnN0rgw+bCMI5JjXbylk9hcuCnurE9NfEbVzR+SiLs0lfH/6Ac/Vu3eeOOs9H9Zk2euwZgTYzcLlclLTDeB0zpeDMQcu/J8Kh1ezjM1uibmQLPuspiBNU1Af0/04xKi+TTs79q5viH37LXX9HrM5Kzox0ee0vp8C3IEtFPRa5uGdz2blzqbHTjIiQ6704AMwCVt+q2RrLs0mtq0F0P22hJrc2wR0ng7hug+1no/Rs5Z3vjEoZ4tY7QusQEcOzWkm8I9fxfkFcz8+8y8wsxvwm8zzPwiM5/v/p8e1IeHh8fBYz9i/L8ioi+Z375BRC85504T0UvdbQ8PjwcYdxTjnXP/iZlPmZ+/QkTPdsvfJqIfENHX79RXyExjmc4h24kWUcrzEgW3vKpNK8WyiORbm2LqCDLai2h1TfYrlrQYPwk84ccXPyK/T2nRET3BYhOhhcLXrQ0xr/305ddVu+VliV5rNY0pBETyXW9a8EhL47hvuwwI73GqBXmkvGPwqkpTI2aD6M5GxE/7eOElVp2AgcWhHmUIA2mD6fC9C1dUu/FxEIvH9LkcBSKR+eKxXrmW6CjAtATX2JzL4Ukx312/Dl59azpS8SpJXbmsVcyT0xK1lw21+J8D77oERPCsGQea29omMLEaiQoxkRPzseLeJ6Ikhag6k74q7KqwfB846A4555aIiLr/F+7Q3sPD44Bx31fjmfl5Zj7DzGfW1zfvvIOHh8d9wQddjV9m5kXn3BIzLxLRSr+GzrkXiOgFIqKPffxRtxV3RJasYRlo1kRsLZjMpys3RWRGkoHHFjUHnVqJTrUIvrQsPGXTMyIqTRR1H8WciPXrNS0u3lqXleRzb4sXnjO5lbLgdVaLtRiPZx3aXEUgdudzsJJuRPUIxOzYdIFNE/DiSm3ADIiV7EwKKbiOzmE7LX9GUGfzkmZySL8sqO5orrp33pJr2mjpXv7b3/5cr3z4tIjS21ktSjcT8a6LYh2Aks+KmP3Rh0SVu1jWAUopSx+zk5q6ewyCX1qp5pbDK9cCKulyqL07CVJbsbWhgIq13hRvw9ScC2ZxPTyuLVbUDa5x94G84ntE9NVu+atE9N0P2I+Hh8eQsB/T278moh8T0WPMfJ2Zv0ZE3yKiLzLzeSL6Ynfbw8PjAcZ+VuN/p0/Vc/d4LB4eHvcRQ/Wgi11Cm+2OHlzf1JFcefB+q9cNIV9WdODjx4Qz/MTiR1W7Zlt0plpDe0FtN8Tkk9TEy6pG1804pP98pqzqtleFTOHyOeAq39a6faUiemmGtJ47Xpa1hLwxVyEZRAz6WmxSWdVB5bO6cgxeeZgOOTbeergO4EwUloqCw3UQ199LzqbzSuBcMK106nS7NUyLZLr/+Y/f7ZVPzoneXC3os14Fc+xlWJshIsrCNR4D0oiFo4dVu0dmhESjGJg1o00xy1VSTWyRhmJuWywdh+POqHZRLM971pCdoCdiE9Z4bKRiFkhZ26kmzWDqRAz2TyXlfeM9PEYGfrJ7eIwIhirGR+02Xb/aEbOcsRmlIFq3NBcEnTgp5rDxMRHFciYTZxYCSZbXX1V1GQhYmAJvrJS12NOMxbRy49bbqu7HP/x5r3z9qpgDNza1/8DchIhphyeNCSaS49Wr2gwVQbomTCQam0CVELjhW0Y8j1IMxpDfm0ZERrF+l1kOzW0gWzNbrzAYkzHfpSCO4rESc6wm7FbZ0Sa1n70mZqiF0xJIsvAR7fV4GdJ5baxorv+4JmrDFPDN1za1OjH+MTG3TZW02pQvyjMXpBOqbhtIRoqh3PdWpFOYbdXkXrdMQBHy2CVA+nFo9rhqx0C4sRVpNdV1+RETe4EB/svu4TEi8JPdw2NE4Ce7h8eIYLg6e5zS2mbHRBAHOqKnBanZDs9onSxfBrfPtpi56hUdHVcaA9fXRLvLFidEwXxvWaLUZie0CaaUF3Pbxi1t3jj/BujpQMhQzutzefIhIbssmXTI26tiuokq1h0SXUxF9wrZ6GGhbFtKwgRcLyPgQjcZsqkB25HxsEwIdWwpB2btIAvt8sZNEwkwGjD8ulljaDVljcSuYWyuid776o/FvfXZY0+rdsUQ7nWsxzhXlvs7XpIoyWZTm35XtoSz/tLyBVV3Yk7MaFMFbVLLRfK81BqyThHVdf8MJsesIYXE9NmUnesVNzc1AecK5BQcn9e5Esvd73ZqEwkA/Jfdw2NE4Ce7h8eIYMjpnxxVo46YERlSh+OTIm4VxrRYfKsh5pQnj4uIXGloIoQ0ENl0aVVzvxXBTFQEj7yL17TIli+JSPj2WzdU3c0lEaNaDRHTnnpMRyCdOiZjTEz0XX1dOOhCQwaB2w7FZ+v9Bq/owIjgaAEr4DmbCLsS2OXaxlwTQ5+QfXqXh1sB+sibJykHdSXow7X0gOsQmdeoa5vr5oaI8edfl3t74lHNgrY4L+aw+bE5VbcwJuJuAi6FTZNmO7Mt9ylbNRe1DXWzOiJuPAFFqiXtrr6rufbmZ+V5aTS1ergJKmfC0F9sePK25dnJt/VzNTvTuQbBAC9H/2X38BgR+Mnu4TEiGG76p8QRbXbE97Ct+ePclIhOtUiLc9GaeKi9CUEy0yZQpZgVMQe90YiI8m1p+86tHlEucaQvQVwXMeraVR0k06iL+FXIyHvykZOHVLtCTkSp6pZeYWYg38ha4gkch9oylNNq06y+YtwKiHSWJwNX+HOGshhpp8exP9MOODooozUvygK1dBEy9LaNhBy1RDxPDQlIpSrPQQ4IK/iG/kY9ceKJXjk/qZ+r8QkR8Zubog66SU1aAk6JxNNaFZieFJG5OKU9IjeX5Jm4dhGCo1a1qJ4DV8F2Q1+sLVjFz2blGoyX9XlOp6JCFLb0s39bG3L942D8l93DY1TgJ7uHx4jAT3YPjxHBUHX2kLM0Xuzot1GqCQhuAuf70YKOLHps+pFeOQceTGlVR5vt1EX3YZNCONmRCLmgJeYY57Ruv3FDvJbaVePhBimLF6YhSmpMH6u1LbzxtTVNbOEg7XNg1W00t6UYlaYbImEh7/KYArJIpc/rdmiisWsHBPr8oKg3XAgI7LoCjCPIyDpIMWPIOcF9LzJrAgmQdkQReKftaO80ty3PUpX1/RzPQRpl0I3nFrSXJsEYKdDTQq1HmMu9tQx5DEDxz7HuY7osx2tm9HNVjyWCrQDrGznS6w/FMdHTs1kd8Rl1F0OcDWEE+C+7h8eIwE92D48RwZCzuDqKqh0RLGteM0dnxdxxeEw7+ScNFP1EhBuf0J5UKQSnFPPaRJK05IATY4/3ypWKDjaobF/qlds7WtxCyrijc6JqcKRVkhhMdGTqGNM/WbEYRHL0oLNSNnrUuV197L3hrLgPm7ukeNtnr13/PgLTi1JJ4JyzhlctAxc1NQQYmKIqRQ78RN+XHIi+UUuL8Y0dub958JysV7R5d2xOuAezE1qNDHPSf/3mTVUXwLimiiJ250zQEDpLVup6jKFSG2S/YlGL6mXYDkxqqGK+Y5oMduUi2KtnDw+PX2j4ye7hMSLwk93DY0QwVJ2dmajY1X/KOX3oQ+PAp26IEFoNMVeVgIBg+4YmrxgDose5Me1OuFoRPfrcqkQ8VdrajJMCN3dicm2Vi+KyOTMh/adNTV6YgqtuaFSoLJh4Mhkd1cSwHoEc8jbXG+p/1nzXD7aZo73Na0TGtRZTQA9w7919APgBTJZWpcwgiUlgiRihO7gGlZp2RW2Anp7L6D4mx8X0lgB3e2FcPx950Nk5Z1y5E7m/+QmtR08DsUVlS8aVGr/VSq0FdYacE+9nTp6PfEGnZUbe/jjSen9a0M/SXthP+qfjzPwXzHyWmd9i5t/r/j7DzC8y8/nu/+k79eXh4XFw2I8YHxPR33bOPUFEnyWi32XmJ4noG0T0knPuNBG91N328PB4QLGfXG9LRLTULVeY+SwRHSWirxDRs91m3yaiHxDR1wf1FXBAhS4nWzarTQf1hpioWm2TGrglYlQB+bqMuWfDiahUjm1iJCAucGJ2qcRaBA/BXYqNOoHRWzkwGQUmWssB+0NouPZw/FGkZd9GQ8TAGHj1UyMjKzOaEZ/R9BKqFNa6He5mTYCsRHfYMGYzJalbgg3YzkA5a46FY7QBW5j+CFWZloloRDVhYloLmEXwdGzVxQxnzWsciPi8K4U1egPmtYifomgNj62lb0czWpLRz3cT2ULgeWlGul0WIi0zhi0k6aovNjIR8b4W6Jj5FBF9koh+QkSHui+C2y+EhffTl4eHx3Cx78nOzGNE9G+I6G8553bu1B72e56ZzzDzmUq1eucdPDw87gv2NdmZOUudif6Hzrl/2/15mZkXu/WLRLSy177OuRecc884554ZHxvbq4mHh8cQcEednTtK278korPOuX8KVd8joq8S0be6/797575Eh7Wmt6guOnYSG105BHdFIHq8sq2j3lAHru1o88wGRNntFETCGJszJouy6Fazi1r/a1bFHRdZVULjuog6cCZnTSIQyWVcO5EI0yH/udGHYyQVNGa5DOjsKmLNkFsidrvHwnqBUvvN2sEA/VA1hetTMLa3HDBmtp1dO5D9EozSM+a1RUi/PHniiO4jgRTIQNLIxsyHunIbuOw7B4f8fCvbqmprU9Z/HEb3jev7HsJzMFPUJrXCjkS9leGDOGbWH7LQB5t034Vyp89MXkdgIvZjZ/8cEf13RPQGM/+s+9v/Sp1J/h1m/hoRXSWi39pHXx4eHgeE/azG//+0O1biNp67t8Px8PC4Xxgu4SRxL1qnbdLvOHAjyoZaLHZggmk4SFdsiBBWK8IzHoVaFFtpCdng/IyIUWw46ptgvps9psWolUtCKJiA+GzFSoaIJ94V5SXlrEnrVMgCgYJSE0xaaScqiY1mw7TV+Io2FkBKwTZkMkNRBH024NA2PXRKe6sMREQ5YMQoZMVclTUuf7MM5BVtXReBGB/BeG002MRhIfwMTV0KInkW7nVQ0B50rMgmTKRiKOJzdlw/E+NH5Z5lQTzP5bUYH4F5cHNHr29Pgxlwcl7OpWz6QLXp2rZ+Ji5e7Kim1VZ/dc37xnt4jAj8ZPfwGBEMNxCGgHjBuBi1W8hFpkWUNnq/HZIh54/rVDx8RVbLb0VaVGq3pM/VS1I3m9PmwLNvvtEruy2tamTzIrKhp5pdAY1BJGyZFKlNyO5Zaej+lUcdiLBFkyUWRfzECOGKHAJE69S815uwOl9p6+u9CtdqG7y4ErN0gx5u1lOwmAdPPpCYF0pafJ4GPraq4QPcTPe2SOTGNTFJUAYikUCL8WFJtvUI+1sgsgX9TKCKkrHif0naooeb9SjMQFBVvqhz715blef23XckV8HGmn6GWzFYm1iP49pK5z5ZYgyE/7J7eIwI/GT38BgR+Mnu4TEiGD55RTdyrG3S1qYQMtQ0gfltIG1s16QuPqz1rjngit/J6uikSlN0pqgsx9qqaS+86QUxn0w/eUzVXfyPmJNLLl2a1/rTreZ6r3zphvYiXtsS/Swy5kdMqzwFZrhjk7r/cSA1aEc2um9vWINMBUyHWyYBWwvWU8pgVhzPal2zqIgnbL448AaEKDVniCEKkNusEOlngppAegH97VR0pCIGwRVz/XXx/aIf4eZedaVyPxdwcz3AtPwXP3lD1f2/P/xZr7y0Is9Oo6Z19mwWCF5Kmvfe0W2Tdv/4E/9l9/AYEfjJ7uExIhg6b3yr3vVoMsH9eeDeqhrxFuNiIhDHJ0MtEraB5GJzXQcscEbEqjbwgbVr2uy0cFq4yB5+Qptx4uvCbd+4Jse6vKJTPF26dqNXrlYqqq4A4lzeeN6haQi96YrGtFcAz6qqpj+nBnDqIeFDmmqxEi4HzWX1OCaAOA89ADPm05AF0d1yv2VCDNqQM8uZwJ38mJjR8i3jywfcfqgytN86p5qtvne5Vz7x8Y/S3eP9i/53Qg3MrD96/aKqW16XZyRtybO0OGOe70ie1Vakn+/xyU4wUBj0/377L7uHx4jAT3YPjxGBn+weHiOC4erszvX4rtNE62cJuBfWWyZ3GrqHwm6bl7QJZnNb9J3slH6PLZ4WgoMLZ8W8sbNhlN7zEjk3l2iSgdKYXK4lcDEtB3ocjwJXucsZYk2IwqoYvvkW6GQ5iJJKjCkyPyZrCc22vlbthvTfgjEaTkxqgKmzHWs9ugGutOixGhrChAwsvOjVDaIyNEU9PTDnnJuRdZCCMctlQzm3o1lZAyhUdETj9voGPeiI4RoUx3TkXD4nKb6Pzgr5xtyMNq9tbcl5Lq/qdaLbxBaDzIb+y+7hMSLwk93DY0QwfDG+K840DPc3ElTUI20Oi0B2dyhiVg3/NkiIQUP3cfanF3rlKjhqseGIKyay/Z//v2v6BIBsYhqin44YD7fajmzXjBjfAi68uhn/GoincSKD3G4YbnsQpzPG5BWD+N8CM19kogyrKMZbixc0bcH1thF8YSjbJWNSG4fjTYLjXWBSajGYuazZKAQSkEngIYwM558zZCcPIsaKYj797MdOqbqdTUljxqnc91xBqzUzs8LWvr6hTW+VSscTNEks+77Af9k9PEYEfrJ7eIwIhstBx0zJba8rIz6jgJgz/PIh8M7VGzUoG087OJuoYrJoAlV1FbKAJuZ1h3xm42W9GlqviZjNQG1cMGLkDoy3ZkJQdkDaXTNi8SoQRTCIxVFNi/Ez4DY3V9KiXgzuhmjFiIyYjdttU4ebOfBcs2miMiBmj1kOOthGS0ts6KINx4NCiGmjQO0ITYbeiZkHP6doFsgHHz81o+ouXhISlvcuizddva6tDvW6PAcbm9oC0Yg6VqR4V9ozgf+ye3iMCPxk9/AYEfjJ7uExIhiqzh5kAirNdPTxfGz42sG8lpgorDiOoB3oJG2TWhciu3LTWt+ePSR6UnrhZq9crWgPumtXxZvpkOkD0xEhZ3pgSB02Qbe6uqP7X90UcoHUpOSdBN2fgU89YzzXeED6YrSwqbTMRjcOUXU2TleYVrkAlXlzX5AvP9xl/pIxIwlmZlc7GRibUMgcpmyGE9tlLp3QBJQPOmbNeP/GlyXXysa2EFasrGlilZu3xET36AlLXtFZo3rjB/+u73Hv+GVn5gIz/5SZX2fmt5j573d/n2HmF5n5fPf/g79K4uExwtiPGN8ioi845z5BRE8T0ZeY+bNE9A0iesk5d8sVOngAACAASURBVJqIXupue3h4PKDYT643R0S3Zc9s988R0VeI6Nnu798moh8Q0dcH9RUEROVSRzzd2TZyZSRmtMDwqkUQ3EFgrgqM3SwPURthQ5u12pDN88ikBF/Q1JxqhxJtKa/F81JRxMeURVQvTE6odlMz4un0cKgDFg4DSUelqjnXtmC7CgEupZwexxhkwE1NdlY0c6E1LGM44srwns+ZV34E6hDepdjaycC0ZzO65kHlQROdyXhFKahogRHxkZceM7yGhswjV9TmxwcdNlilAGrJkfmZPctERE8/8VCv7EyKqtvb//wf/aO+x91vfvawm8F1hYhedM79hIgOOeeWiIi6/xcG9eHh4XGw2Ndkd84lzrmniegYEX2GmZ/a7wGY+XlmPsPMZ7a3K3fewcPD477gfZnenHNb1BHXv0REy8y8SETU/b/SZ58XnHPPOOeemZz8cK2aenj8IuGOOjszzxNR5JzbYuYiEf0GEf1jIvoeEX2ViL7V/f/dOx4tSSnd7ui6s0VNDJEFvSspa9NKPRL3yEpDdJUo1qarfEH2s0QLubz0PzUu7rilstb38hNyrIlxk0sOosjefvct+X1Dm0jKRenj6sXrqm4NCAhiZ9ncRaGdK8v1mSpraojxMdFZrd7vlM4OxJHG4pWBOmuWyyqzHKZlNibAoH/EWka52Uqd1cvVGE0EHxJyZuAEphZmVbti2VJnfNigVkbg1wG+xPY77W4/+/3JK/ZjZ18kom9zx8gcENF3nHN/ysw/JqLvMPPXiOgqEf3WPvry8PA4IOxnNf7nRPTJPX5fJ6Lndu/h4eHxIGKoHnSlYok+9fQniIioOK0j24IcmK+cFlFSiCKLQXwJc8YEA3zq1rzBINYHLKYsZ7jwGKKTglD3j+JWg6SP66/+Z9UqC6Ts1uSVC2W/jBHjQ5Cni+CVVzaqRgHE1lpDm2Dwyg0SAlHasws3KJ4juUQQ6nMJ4JqGoX6UkG8e+7DWOyTfCA3BxgTcwxL0/+gn9Ppw3qiEDyZcn7LdAqIWMim9UzFTVhO9RDYeHu7uY1VDgfeN9/AYEfjJ7uExIhiqGJ8pFGjmdCc9D+9aHhaxlVkPyzkM9oDV5kB7lmmYIBlY5WQ4bc7uEmIH9CnHPvHQ6V45XVtSrTbfOd8rl4paFWg2Zcy7MrCCjJsBdaJkVpvRsmDTOimZcNCpQJ1dZc+BGhWoTowYD/fQrsYzrMajSB+kWsxEdatsONeyJEFD41D30OOP9O3j3kAL1rFr9WlHlGG8v/u84KYdg+idghifpFYkhxRmsQ6AqnEnSCZ1+neE/7J7eIwI/GT38BgR+Mnu4TEiGDLhZIbC/O2ge6vfiJ7knCaLDII8tEKz0CC+cGt4QlPQoHfc/ryWcpCqaMJEziGpg01lnANd3MVWB5b+iyESQ2iPwgAiwGLDsd9v+ImpQFLJwO4EprcSrKWgV1ynXbB3mYgcmhzhvDJmfSCE+/nQww+purnTT/TKh06e6JVPPP4Y3Xv0v+/olRjYtaZ7ArkmEURn1qI11aqUFcqI+cJJVZd216TQrNz/KB4eHr/Q8JPdw2NEMFwxnoioJ3pbsQkDLnKmzu3R6v2B970nenvpMfYz8eTHdMAMcoRnjXibxwCRUItcITA75IHQwLZDrraMGVIY7D1+dv3PP2eDU+AbgJzybLwBi6BeWHUlBXE9zcC5GCIONNmdeOQjqu4LX/6ytMMx7rI2At/+bn9A2h/6t8sGH8RDz6hNJOI5m2mn7mcg1yqf1WZbx2KqRRMdEVGUtrpH9R50Hh4jDz/ZPTxGBH6ye3iMCA5AZ7+N96N9Y1vUSfrr/bv773e8/uMY7IUJHPVlTTiJBIilvF5/aANZYsNEecVwbhh9VzKvZOSRHyvo/mugO2P3QWD1cohmy+i69aboly3MsWZccwuJbM+W9aM0AeftQGdPs/1NQxnDS49RdbheYkkdeOB9PyjoMTYSIS3JsV4DCJSZUsr1ts7xV2tBrsFEn2cUdwhUoqi/a6//snt4jAj8ZPfwGBEcoBj/QfHgvZ9yY1qML88I33fBRL3l6yLS7tS1yNUG81KzJaL0zsq67h/47MfHNYln2haPumpTypsmvfVaU7YrhsADffJY8cdp0TQPm7WGFjlPgOfdRA7FVNVMRXZNTOqURv281fZvRh0unOKP09ebE7i3rHkDCyDWx25b9gmNSB7KM5EYC1u72bkmg1JgP3gzx8PD477AT3YPjxHBh1CMf/CQyWvShaljEqSQf/NtVReDmLWV6CAWB6vPCQS4VCtaREbPuHGT0XQCVtYbwHG33tIi4XYkImFqVo6zoE6UYIU8NF5yyDsXGu+6HSDmKDlRZVJDyIAehpNTWoz/MGOXOA3eke1YZ/aN0zqUZcV9O72p2oWBUGhvRBuqLu2qPDbgCeG/7B4eIwI/2T08RgR+snt4jAi8zn4PYAkbZ04KIWJh3KQmAt2tFmudfW4C0lKB/j5pIsUc6NtNo4tv1kT/i9rSrmxe62i+yxrvukxWtttg5lpq6PEiz/2hMT1GjMZrpxCVZnT2HHgUTk5N04OPgWz8PQQmcjOTEV08H+rrGANZSwJrHeub2kRXzMrzsbGtiS1ue+XZFN5qTHca9G100za/xsx/2t2eYeYXmfl89/+H4U55eIws3o8Y/3tEdBa2v0FELznnThPRS91tDw+PBxT7EuOZ+RgR/TUi+odE9D93f/4KET3bLX+bOqmcv35vh/fhxNjCkV55/NCCrrshHPOFZb1fDKmcLm4JZ3o11R5uz54+2iu7huYJb4Fq0Kg14Hfdrg6qgDMRP0FexPhqS4690tQqwyEQwWPjhZeCma4NdVkjZs4cPtwrT4Ln4fDRn3DfGaIIBHrzIXGGJZFopXJvq6kWz9uxbG9VV3vltKW/xUlbrr9b0zkHjnykk8cgOyCXwn6/7P+MiP4O6ZCzQ865JSKi7v+FvXb08PB4MHDHyc7Mv0lEK865Vz7IAZj5eWY+w8xnVldX77yDh4fHfcF+vuyfI6K/zsyXieiPiOgLzPwHRLTMzItERN3/K3vt7Jx7wTn3jHPumfn5+Xs0bA8Pj/eL/eRn/yYRfZOIiJmfJaL/xTn3N5n5nxDRV4noW93/372P4/xQIV+WSLT5Rz+q6m5ckDxwkyYibr0uOjZY3mi90lDtdiCK7PC0JrvMg37sMFgu0ua1tC23vm5INGqwvQbRbJNGt58E3d6l2pwUQZRXBGOyX5eFE+JajGa4D479mcZ2p01GUlOTt07lJ9C6OPZSSeV7V0uqql0R+NyrZu2j0RSdfRs+mVsbW6rd4eNyHU8e07kKonanrXP91xfuxqnmW0T0RWY+T0Rf7G57eHg8oHhfTjXOuR9QZ9WdnHPrRPTcvR+Sh4fH/cDIe9DZKKwYItFsGmLkcRuUJhhTFB956lOq7tJrP+mVZ5c1KcVqRUS/hWnxlrJOUe9cFFlv+4g2V42VJAIvQfNXrMW7Koh71zYqqq5RBzMd7DZXtF5yIsRa01sA5sIIysifR0QUZu61x/YgXsL+vw9OCba/3rMEakhrW7UbK4m5NFvSHHRL7kqvXDwsRq3JOa0aNds3ZBxlLcYXu9z2Qdh/SnvfeA+PEYGf7B4eI4KRF+O3q1qEvXztat+2WSByKOREZCsVtVhWKsh23tBMn/jU53vlm1f1scaWJbghDyQUj588pNpduSH+CjcvLam6sCQBGBkQn9st40EHdNFJU4uLBVAbCgU456z+NqAKFNtUWXDsEPQQm9irsimqTLWi78XYuKgyWm3qn6F3/9+v/gEjA+nFTf8Ozi0fiAq1UD6h2gVw5oEzfbSFzCLMSh/MmqBicezRXnmzcUvVTeQ7z1kwQL30X3YPjxGBn+weHiMCP9k9PEYEHxKdHfWre/t+arR09FAEJqrYkEtUqqJbRWCic8Z8h5FQE2NlVXfqsad65UOnn1R1S0tiUnNAPDFe1pruYycXe+Vbt7Ret7ElJp82RLaRMb0VQMfOGz0vW5LHAoksEnOeqKZHNiU0VOIda7W199j6TVlz+OFL/1GPoyA6+5Mfl+u2sKCpE7JqLWGQB93+0oNFUWTqpE9Luql1ZLlPMe2odjFEvaVOmzAXxh+SI7Ecu76io+OiULwZ623tXffu6iUiImq2NZmlGmvfGg8Pj18o+Mnu4TEiGLIY78hRR0xh6h9kvxt7Z3Ftt7UIXquJB1qhoLnfcmAqw0yZlsMNzUmB8aDLZMF8Ap5KWZOZdKIsxx4DUZSIaHlZRLFmTpvUxueFF3wNxNvYiJXlspj2jixqD7pSXsZVAz66ukn/hF5tLZsVFS43qihpqtthAE3d8PCVoE9UQgKTmTSCe/bI0cOq7s03z/XK/9cZIUl65KNPqXaPP36sV/7Iw7qPYgE5/QdlgpVtZ8yIKXLomfPkPplm09Q8306uP5vrmM/I/Vxpy313JX3PapGYKdsmOGr1ckedi1v3JxDGw8PjQwQ/2T08RgR+snt4jAiGqrOnVKeGe42IiEr8jKkdZD7Z2wUwjrX+98abr0qdUV1KJXFbLY+BG2aoSR3GgFAiMHzqGM2WA9dZSvU7873zEp105fJbqi4FMohPPKp19tqauFgurYnrbCXSaxOoUydGv4wzsr0NIWtbidb7IzAr2tWTHORtS6F/qw2iuS01tyiG7RT09NQ4zG6tibnx3Ksvq7rZCcn9lmxL3rPvf1/nQPvJGWFAeuThI6ru2V/7dK/88EMSecaBNqu2YtGBCxmdBjvLg0g15PqkEEnYiDR5RQJkFnYtqMDybLpI6tK2vuJL1671ymGk8wvOTnbOOxPePeGkh4fHhxx+snt4jAiGbHrLEtNt0bV/dM5+kc9r89rYmPCxXbuho8HWtySiCsXzQkGLQ5h5ODREC2NjIlaur4qn0pmXf67aLd0QMTNryAQOTYpH3fxTn1B19UlRL97OiLhbM/xuAXjXZYwZJwCxOwau+Ci2Yjxw1VnnN5DJUZBMTVrmmMG7zvYB5sIMRIY5c023Iert7M9/pupKwOVX3RTPwBvL2rPs3AVRld4+q9M+v/yq3JtPf+pjvfLnP6+v/REgAQmcNmvh8xKlWnXMwX1ygZjKwoy+3m24pjfql1RdMZDnNoqBX76h722zJv1PzehoyvG5DulFmPdivIfHyMNPdg+PEcFQxXimgJhKfWpFYExSLQIhPW4mFDE4DPXK7rFjQku8XdGi3jXwSAszsrqaK2j5MwzkkjQaejX+8iVZOT771tu98k5lU7XbWBVigXJRn2+BRQxsbGiq/THIijpbFPXi2qYOegiAt61gvb3gdIogMqcZfS4RtItjHeASwSauqlvnrBaMNzTjmII6FOPTRKsk1R05t7bxZgwyIpIuVaVueVu3Qybs9Q1N6tCGwJuNDQka+vkb51W7Zz718V7587/6MVW3eEQCb2pmlZ0YrTdyb2/svNe3nSX62I4lD5iriBiftPSxUELf2dQBLzF3nkEbvIXwX3YPjxGBn+weHiMCP9k9PEYEQ/agi6iVdnTnjPEiasSiaxUCnRA2ZDGn2IgkxMK8RDyNj2nTRP2HP+yV1yuifK5va122tiGkAyu31lTdu+++3itvgL5dLGiCimZD9KnEmLxyJDrkrVtavyxB3Skw0W3taCKEHeBotx6ASJyRBVNZKWtIF0ABbLYNSUeEZjkwwxkbXQDeY/OG/z2v7lN/nT0BU1Orpc1aeOylqoxpp6o9CgO4Bqkh2b9+/UKvjJGQq6vXVbsNMAG+e+GKqvv0pyXK7smPH1N14bycT4vlmZjIHVftijkxq96oadPbOuR8AgfIXZF5QUae6SAxKaG76bld2n9+7Dc/+2UiqlBnFS12zj3DzDNE9P8Q0SkiukxEf8M5t9mvDw8Pj4PF+xHjf90597Rz7rZT+zeI6CXn3Gkieqm77eHh8YDibsT4rxDRs93yt6mTA+7rg3eJKeUO53kt1l5KV7Yu9sqnpj6n6iaymOpmf553yOtORDRREBFoZUXMPZvrOk3PjRsSbHDh/Ouq7taty73y7KzwwG1taROaQ2KIlnmfJjKui9e1l9/pBRHdc2Aqe2hMe/ld2hRvwIoxm+VB9AuQbMNkas0Bl1psAn4IgkRaINIHhmt9GkT3krktoQqg2durj2h3IA+iAYdbB9E9jkyqqUTG4QyfXpKIShVHoiY16pqjfnNT7uHSLS3GX7suz8Sbb59Wdb/+3Cd75eKi3M9jEzq7bkpyTVPjoRdV5Jpks7LfWuOiare9Je1ysX6+XTfQKTZBU4j9ftkdEf05M7/CzM93fzvknFsiIur+X+i7t4eHx4Fjv1/2zznnbjLzAhG9yMzv7PcA3ZfD80REx07494GHx0FhX19259zN7v8VIvoTIvoMES0z8yIRUff/Sp99X3DOPeOce2ZufmqvJh4eHkPAHb/szFwmosA5V+mW/yoR/QMi+h4RfZWIvtX9/9079dVIa/Rm8wwRES2Ev6TqpsaFyKFuclxRLDrlREbICZxhqIgboq+sbWmXylurogBevSK50paXtQnm8mUhNtzc0Do1klGGEM22ad1eIVorMRFraSLjeuf6sqo7Ni7nhiakgokUO1ESfW3HuEfWQDevgl7ezGp9exv03qYx4ySg95YyUs6T1u1zoItnjD6Pmjhaw3bTkgD5g1mPWa3LuVXBlda2Uwewuc5gO4b7h+sqRNokuLJyTdVVqxBxd0O7wV64IKSYv/pfCVHG+K/pcRSnpY8CaxLS2bKYjLchbffSijbNUgWmq9NrAuPd/AQB9/9+70eMP0REf9JlzswQ0f/tnPszZn6ZiL7DzF8joqtE9Fv76MvDw+OAcMfJ7py7SESf2OP3dSJ67n4MysPD495jqB50zsUUtTsi9EZGEz4czksKnAZpk0M+FfEoaUEE0o42M5y7Ij49/+lHZ1TdxUvSJ4rdzYaOLNpYF9G93dYmkmJeTGP1mni1NZs6AqmQF1MZ8pIRETVAXLxwa13VPTkr4vkE3Bk2omkexPo5wzk2Dya7elFMbzt1rdY0mrKdRPoxaAEff7sNZrPEmLyUTK4FdEV6AVVsTG3olLcTaVXgRlWufwyqhr0ejlG9sHVQw9JHYjzt0gBEfHMuDTVmXXfxPfH6W14W7sFzZ7WX3K98/qO98tScHuPUGKQLmxTxfGZL5wTIhPJ81JZ0VGerqx66pL8p0/vGe3iMCPxk9/AYEfjJ7uExIhiqzh4w03jXZNV0V02t6OzzfErVJKA7X7sprq4vv6X7eOVV4Y1fMWaLGujY9Zq4SkaR1stboH87o9dlwQUX3SsTG8mltrUOhSmLV4y56sfvyvn86klxEc7ucinFZGwmZxnotmWILMwYIsI6mOyakTEPgkkTzY32WHhqsTlPFXzl0LymUQE9/VJFR71VgVgTu7PmpRQWD5zR2RmUdnSltWsHPEAvRwdfZr3GE8I1bjZEj379Nc2Bf/WK6PC/9KmnVd3Hnxaz83Ys5JkJGYaiUNaryse0u2x7pzuOAZ9v/2X38BgR+Mnu4TEiGC55hYuolnTE61xGm4K2WuLVVoqfUHUXzot498rLIh5duaqjk3Z2xPTWamnTRLUqIhGm36nsaG+9GMgUbCodFBCrVTmWFffR+806dGH633pTqxA/X5JthuiwTy5Oq3Z57NOYwxwQVoTgQZc3JBcJ1EWkTZghirvwuxV9MWLNpnPGrQhUgW0TpXcFTIKrDRsRB8fGdMhGGWC1qb9fKNarexEYlSTtb3rDKxyZG1oFIhSMpCsYolF8Hv/8z3T6qgsXPtIrf+ZZIbs8fFITsEQteebaTX3PWmFnXCl705uHx8jDT3YPjxHBUMX4rMvQQtLJuHnrlhaHUhJR5qW3V1XdubeFR6xaldXQuiEgaDZFVEIPNyKiOAaPMViJbjR0H7hyHJjUTXi8diSqRchaRFY8ebukReBjM6Ivcr6/ckPUi62qVkk+BTzmU4ZbDkVtTA2VyWqVJAvbOVOXg1XwBvDT7TIKDOBLa8GK/gqs9t+oa/FzA8joBzh/9TtsF/gsGREfxG5Ni2d6AdUutSYD5OEz5BuolmFwjSXHQLG+PK6jP987L893oybX51ee+6xqd+iUjCNX0BaUfNfagnkPLPyX3cNjROAnu4fHiMBPdg+PEcFQdfYoDml5vWNOWHnvo6ruyrsSAba6qskgWi2IfgJCvR1jNkOdumGi2aK26NhtMINEbW0CJPDOCoy5qoLmNlTsMv0vY2JJEtAsZ5TgGOqQpPGtNb3+sAp57H75qI6MOjoGOcVgbSJjCCoycG55q/eDDpzCGEOTsjmFPivGC+8GmIZu1kXPrRqySKse64GgpyBWDPAoNFCmN9XOLqZA2XwCHXhE2mg5XNdJgajERp8hOUZqzKWT0+ItubEu61V/+eKPVbsnPyVrNXNH9DhOHnqqO/T+32//ZffwGBH4ye7hMSIYqhhfr2Tplb/o8K1fv6gJKhIQe+JImzeQRGJjXQJcrHmjDaI6esLZPlsg4tt0RAwc6s7YYJDoAs1rg3i/9rATybEHcKajWc42uwleZ99/Twf8PDJZ7JWPlkWkHzOBMMW8EFtkTFqnGvLawak1DLnEtYrcl6uGHGMTTHYRnIANVEFYUop+pj3bA16eXXWqclDLdM8ikfFKM2K8ocqA4xpePyfPnyVMwUHygAdm6ZJM18dOn1J1hUznfu66hgD/ZffwGBH4ye7hMSLwk93DY0QwVJ291YzovXe6OqYzBARgjogirf+tLEt0WxXMbaijE2k9Gs11REQpkjWA6c26P4ah6LIto/9EoPcHUBeY9NM4Dks4iesAu9NPuz1KhkDC9LFjosheWZFrh5nqsrtIK8H10owftzBirWZ4+tGMFlsiyT7nYqHdWQe0VFYzQ1ChuOctBunpe7eyOe2cZq1UdSnHUAU55+z1UNv6mWs2RYff2pBjt00Ka07lmc7/mibA4Nu5E11/Y6b/snt4jAj8ZPfwGBEMVYwnYgq6EWKREZ/RHLF8S3Nu1yD9Tgsi26wnEprAWg3N5Z4kcrwIvPCsiBxmQIw3fPAoIjFEF+0W4zGyzYqE/UV86hctNyClUWKEZDxeBFUNK1a2BwnXe493QNDbHrUC7rth9xtgVBvQbJD07wY4zelhDTIPcp+yjpALQDWyg1JqTWpUWEjnjM+3TVEVAo3GpSs6ddgXHn2MiIgyGZN+G7CvLzszTzHzHzPzO8x8lpl/hZlnmPlFZj7f/T995548PDwOCvsV4/85Ef2Zc+5x6qSCOktE3yCil5xzp4nope62h4fHA4r9ZHGdIKK/QkT/PRGRc65NRG1m/goRPdtt9m0i+gERfX1QX45cj2a5BkElRESrkDlzZ0sHwmDwS5L0oTkmokxGvMTipL8HHfZhJTvMztqoaQ89RdCgJDbjLQUqg/XQw7bWQ8/1ozMeIH7uolVmXO3vz6u2XxF8sHjeX7zV1wfPZUAQyy7+tH6r5/3HtKtmf5rAHTz7BpCRqMCmQZ6UqCYMoN2GZ7NtgrSaYGE6+5bOJvvU4yeJiChu391q/MNEtEpE/yczv8bM/0c3dfMh59xS5zzcEhEt7KMvDw+PA8J+JnuGiH6JiP5359wniahG70NkZ+bnmfkMM59pmkUzDw+P4WE/k/06EV13zv2ku/3H1Jn8y8y8SETU/b+y187OuRecc884554pFMt7NfHw8BgC9pOf/RYzX2Pmx5xz56iTk/3t7t9Xiehb3f/fvVNfaRLTzk4nOH9rXZsOtiGdUmQ845DUD3WfxJjeQiBksHVK10dCBsMNj3p0bCPilBkHTGimHaZCsubBBAgOLOEk9dHZd0dy9Y+u0m9v8E6zfezTs0zzR/SL8aLdpia1Ocj+hfrwANPbAA861+e+7NqRUW/u22o33IB1BXXL0r1/N8PaFdnWJ7rP3ltcd7q5pOfP5lbnuYoHsHbu187+PxHRHzJzjoguEtH/QJ3n6jvM/DUiukpEv7XPvjw8PA4A+5rszrmfEdEze1Q9d2+H4+Hhcb8wVA+6JIlpZ2uNiIi2tjQ3fBOzpxrPIc2JhjzdxsygRHyTmRT5vUHSyRVzqp3ymrOZPnlvcdTyzAWKg9ykhkr7e9f1Iy7YnTy1vylr315tA+RW7ciHqsAHNdjtz1Rmz1/X9R/HICsl92k3GKYh91eHlEkN1bJdRBwDAoPUbv1JS2IIRNrZ0Rlef/rya0REVKvpHAMI7xvv4TEi8JPdw2NE4Ce7h8eIYLgpm5OY6tUO+US7pR1sYkNYgVDpesGUZcn1lHnNpjLWzIO9Usbmc2sjR3t/DXC/LqCWxEDrkP0JDjSZQt/uB2KgTj3I8jbQlLVf9Fl/GLhPf9ObG6AO610G6P191lx2bw2KvrPmR4xilHJgVfZBZ67Md2BytSmyYR3KEltcvXaj87sha0X4L7uHx4jAT3YPjxEBD+T9utcHY14loitENEdEa0M7cH/4cWj4cWg8CON4v2M46Zyb36tiqJO9d1DmM865vZx0/Dj8OPw47tMYvBjv4TEi8JPdw2NEcFCT/YUDOq6FH4eGH4fGgzCOezaGA9HZPTw8hg8vxnt4jAiGOtmZ+UvMfI6ZLzDz0Nhomfn3mXmFmd+E34ZOhc3Mx5n5L7p03G8x8+8dxFiYucDMP2Xm17vj+PsHMQ4YT9jlN/zTgxoHM19m5jeY+WfMfOYAx3HfaNuHNtmZOSSif0FE/w0RPUlEv8PMTw7p8P+KiL5kfjsIKuyYiP62c+4JIvosEf1u9xoMeywtIvqCc+4TRPQ0EX2JmT97AOO4jd+jDj35bRzUOH7dOfc0mLoOYhz3j7bdOTeUPyL6FSL6Pmx/k4i+OcTjnyKiN2H7HBEtdsuLRHRuWGOBMXyXiL54kGMhohIRvUpEv3wQ4yCiY90H+AtE9KcHdW+I6DIRzZnfhjoOIpogokvUXUu7incP1wAAAglJREFU1+MYphh/lIiuwfb17m8HhQOlwmbmU0T0SSL6yUGMpSs6/4w6RKEvug6h6EFck39GRH+HdALWgxiHI6I/Z+ZXmPn5AxrHfaVtH+Zk3ytWaSRNAcw8RkT/hoj+lnNu507t7wecc4lz7mnqfFk/w8xPDXsMzPybRLTinHtl2MfeA59zzv0SddTM32Xmv3IAY7gr2vY7YZiT/ToRHYftY0R0c4jHt9gXFfa9BjNnqTPR/9A5928PcixERM65Lepk8/nSAYzjc0T015n5MhH9ERF9gZn/4ADGQc65m93/K0T0J0T0mQMYx13Rtt8Jw5zsLxPRaWZ+qMtS+9tE9L0hHt/ie9ShwCbaJxX23YI7AdX/kojOOuf+6UGNhZnnmXmqWy4S0W8Q0TvDHodz7pvOuWPOuVPUeR7+g3Pubw57HMxcZubx22Ui+qtE9Oawx+Gcu0VE15j5se5Pt2nb78047vfCh1lo+DIRvUtE7xHR3x3icf81ES0RUUSdt+fXiGiWOgtD57v/Z4Ywjs9TR3X5ORH9rPv35WGPhYg+TkSvdcfxJhH9ve7vQ78mMKZnSRbohn09Hiai17t/b91+Ng/oGXmaiM50782/I6LpezUO70Hn4TEi8B50Hh4jAj/ZPTxGBH6ye3iMCPxk9/AYEfjJ7uExIvCT3cNjROAnu4fHiMBPdg+PEcF/Ab14e6CKxZY5AAAAAElFTkSuQmCC\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "index = 124\n",
+    "plt.imshow(X_train_orig[12]) #display sample training image\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a name='2'></a>\n",
+    "## 2 - Layers in TF Keras \n",
+    "\n",
+    "In the previous assignment, you created layers manually in numpy. In TF Keras, you don't have to write code directly to create layers. Rather, TF Keras has pre-defined layers you can use. \n",
+    "\n",
+    "When you create a layer in TF Keras, you are creating a function that takes some input and transforms it into an output you can reuse later. Nice and easy! "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a name='3'></a>\n",
+    "## 3 - The Sequential API\n",
+    "\n",
+    "In the previous assignment, you built helper functions using `numpy` to understand the mechanics behind convolutional neural networks. Most practical applications of deep learning today are built using programming frameworks, which have many built-in functions you can simply call. Keras is a high-level abstraction built on top of TensorFlow, which allows for even more simplified and optimized model creation and training. \n",
+    "\n",
+    "For the first part of this assignment, you'll create a model using TF Keras' Sequential API, which allows you to build layer by layer, and is ideal for building models where each layer has **exactly one** input tensor and **one** output tensor. \n",
+    "\n",
+    "As you'll see, using the Sequential API is simple and straightforward, but is only appropriate for simpler, more straightforward tasks. Later in this notebook you'll spend some time building with a more flexible, powerful alternative: the Functional API. \n",
+    " "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a name='3-1'></a>\n",
+    "### 3.1 - Create the Sequential Model\n",
+    "\n",
+    "As mentioned earlier, the TensorFlow Keras Sequential API can be used to build simple models with layer operations that proceed in a sequential order. \n",
+    "\n",
+    "You can also add layers incrementally to a Sequential model with the `.add()` method, or remove them using the `.pop()` method, much like you would in a regular Python list.\n",
+    "\n",
+    "Actually, you can think of a Sequential model as behaving like a list of layers. Like Python lists, Sequential layers are ordered, and the order in which they are specified matters.  If your model is non-linear or contains layers with multiple inputs or outputs, a Sequential model wouldn't be the right choice!\n",
+    "\n",
+    "For any layer construction in Keras, you'll need to specify the input shape in advance. This is because in Keras, the shape of the weights is based on the shape of the inputs. The weights are only created when the model first sees some input data. Sequential models can be created by passing a list of layers to the Sequential constructor, like you will do in the next assignment.\n",
+    "\n",
+    "<a name='ex-1'></a>\n",
+    "### Exercise 1 - happyModel\n",
+    "\n",
+    "Implement the `happyModel` function below to build the following model: `ZEROPAD2D -> CONV2D -> BATCHNORM -> RELU -> MAXPOOL -> FLATTEN -> DENSE`. Take help from [tf.keras.layers](https://www.tensorflow.org/api_docs/python/tf/keras/layers) \n",
+    "\n",
+    "Also, plug in the following parameters for all the steps:\n",
+    "\n",
+    " - [ZeroPadding2D](https://www.tensorflow.org/api_docs/python/tf/keras/layers/ZeroPadding2D): padding 3, input shape 64 x 64 x 3\n",
+    " - [Conv2D](https://www.tensorflow.org/api_docs/python/tf/keras/layers/Conv2D): Use 32 7x7 filters, stride 1\n",
+    " - [BatchNormalization](https://www.tensorflow.org/api_docs/python/tf/keras/layers/BatchNormalization): for axis 3\n",
+    " - [ReLU](https://www.tensorflow.org/api_docs/python/tf/keras/layers/ReLU)\n",
+    " - [MaxPool2D](https://www.tensorflow.org/api_docs/python/tf/keras/layers/MaxPool2D): Using default parameters\n",
+    " - [Flatten](https://www.tensorflow.org/api_docs/python/tf/keras/layers/Flatten) the previous output.\n",
+    " - Fully-connected ([Dense](https://www.tensorflow.org/api_docs/python/tf/keras/layers/Dense)) layer: Apply a fully connected layer with 1 neuron and a sigmoid activation. \n",
+    " \n",
+    " \n",
+    " **Hint:**\n",
+    " \n",
+    " Use **tfl** as shorthand for **tensorflow.keras.layers**"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 139,
+   "metadata": {
+    "deletable": false,
+    "nbgrader": {
+     "cell_type": "code",
+     "checksum": "95d28b191f257bdd5b70c7b8952559d5",
+     "grade": false,
+     "grade_id": "cell-0e56d3fc28b69aec",
+     "locked": false,
+     "schema_version": 3,
+     "solution": true,
+     "task": false
+    }
+   },
+   "outputs": [],
+   "source": [
+    "# GRADED FUNCTION: happyModel\n",
+    "\n",
+    "def happyModel():\n",
+    "    \"\"\"\n",
+    "    Implements the forward propagation for the binary classification model:\n",
+    "    ZEROPAD2D -> CONV2D -> BATCHNORM -> RELU -> MAXPOOL -> FLATTEN -> DENSE\n",
+    "    \n",
+    "    Note that for simplicity and grading purposes, you'll hard-code all the values\n",
+    "    such as the stride and kernel (filter) sizes. \n",
+    "    Normally, functions should take these values as function parameters.\n",
+    "    \n",
+    "    Arguments:\n",
+    "    None\n",
+    "\n",
+    "    Returns:\n",
+    "    model -- TF Keras model (object containing the information for the entire training process) \n",
+    "    \"\"\"\n",
+    "    model = tf.keras.Sequential([\n",
+    "            ## ZeroPadding2D with padding 3, input shape of 64 x 64 x 3\n",
+    "            tf.keras.layers.ZeroPadding2D(padding=(3, 3), input_shape=(64, 64, 3)),\n",
+    "            ## Conv2D with 32 7x7 filters and stride of 1\n",
+    "            tf.keras.layers.Conv2D(filters = 32, kernel_size = (7, 7), strides=(1,1)),\n",
+    "            ## BatchNormalization for axis 3\n",
+    "            tf.keras.layers.BatchNormalization(axis=3),\n",
+    "            ## ReLU\n",
+    "            tf.keras.layers.ReLU(),\n",
+    "            ## Max Pooling 2D with default parameters\n",
+    "            tf.keras.layers.MaxPooling2D(),\n",
+    "\n",
+    "            ## Flatten layer\n",
+    "            tf.keras.layers.Flatten(),\n",
+    "            ## Dense layer with 1 unit for output & 'sigmoid' activation\n",
+    "            tf.keras.layers.Dense(units=1,activation=\"sigmoid\")\n",
+    "            # YOUR CODE STARTS HERE\n",
+    "            \n",
+    "            \n",
+    "            # YOUR CODE ENDS HERE\n",
+    "        ])\n",
+    "    \n",
+    "    return model"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 140,
+   "metadata": {
+    "deletable": false,
+    "editable": false,
+    "nbgrader": {
+     "cell_type": "code",
+     "checksum": "8d3575c950e2e78149be2d05d671c80d",
+     "grade": true,
+     "grade_id": "cell-e3e1046e5c33d775",
+     "locked": true,
+     "points": 10,
+     "schema_version": 3,
+     "solution": false,
+     "task": false
+    }
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "['ZeroPadding2D', (None, 70, 70, 3), 0, ((3, 3), (3, 3))]\n",
+      "['Conv2D', (None, 64, 64, 32), 4736, 'valid', 'linear', 'GlorotUniform']\n",
+      "['BatchNormalization', (None, 64, 64, 32), 128]\n",
+      "['ReLU', (None, 64, 64, 32), 0]\n",
+      "['MaxPooling2D', (None, 32, 32, 32), 0, (2, 2), (2, 2), 'valid']\n",
+      "['Flatten', (None, 32768), 0]\n",
+      "['Dense', (None, 1), 32769, 'sigmoid']\n",
+      "\u001b[32mAll tests passed!\u001b[0m\n"
+     ]
+    }
+   ],
+   "source": [
+    "happy_model = happyModel()\n",
+    "# Print a summary for each layer\n",
+    "for layer in summary(happy_model):\n",
+    "    print(layer)\n",
+    "    \n",
+    "output = [['ZeroPadding2D', (None, 70, 70, 3), 0, ((3, 3), (3, 3))],\n",
+    "            ['Conv2D', (None, 64, 64, 32), 4736, 'valid', 'linear', 'GlorotUniform'],\n",
+    "            ['BatchNormalization', (None, 64, 64, 32), 128],\n",
+    "            ['ReLU', (None, 64, 64, 32), 0],\n",
+    "            ['MaxPooling2D', (None, 32, 32, 32), 0, (2, 2), (2, 2), 'valid'],\n",
+    "            ['Flatten', (None, 32768), 0],\n",
+    "            ['Dense', (None, 1), 32769, 'sigmoid']]\n",
+    "    \n",
+    "comparator(summary(happy_model), output)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Now that your model is created, you can compile it for training with an optimizer and loss of your choice. When the string `accuracy` is specified as a metric, the type of accuracy used will be automatically converted based on the loss function used. This is one of the many optimizations built into TensorFlow that make your life easier! If you'd like to read more on how the compiler operates, check the docs [here](https://www.tensorflow.org/api_docs/python/tf/keras/Model#compile)."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 141,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "happy_model.compile(optimizer='adam',\n",
+    "                   loss='binary_crossentropy',\n",
+    "                   metrics=['accuracy'])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "It's time to check your model's parameters with the `.summary()` method. This will display the types of layers you have, the shape of the outputs, and how many parameters are in each layer. "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 142,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Model: \"sequential_11\"\n",
+      "_________________________________________________________________\n",
+      "Layer (type)                 Output Shape              Param #   \n",
+      "=================================================================\n",
+      "zero_padding2d_10 (ZeroPaddi (None, 70, 70, 3)         0         \n",
+      "_________________________________________________________________\n",
+      "conv2d_69 (Conv2D)           (None, 64, 64, 32)        4736      \n",
+      "_________________________________________________________________\n",
+      "batch_normalization_10 (Batc (None, 64, 64, 32)        128       \n",
+      "_________________________________________________________________\n",
+      "re_lu_60 (ReLU)              (None, 64, 64, 32)        0         \n",
+      "_________________________________________________________________\n",
+      "max_pooling2d_54 (MaxPooling (None, 32, 32, 32)        0         \n",
+      "_________________________________________________________________\n",
+      "flatten_35 (Flatten)         (None, 32768)             0         \n",
+      "_________________________________________________________________\n",
+      "dense_22 (Dense)             (None, 1)                 32769     \n",
+      "=================================================================\n",
+      "Total params: 37,633\n",
+      "Trainable params: 37,569\n",
+      "Non-trainable params: 64\n",
+      "_________________________________________________________________\n"
+     ]
+    }
+   ],
+   "source": [
+    "happy_model.summary()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a name='3-2'></a>\n",
+    "### 3.2 - Train and Evaluate the Model\n",
+    "\n",
+    "After creating the model, compiling it with your choice of optimizer and loss function, and doing a sanity check on its contents, you are now ready to build! \n",
+    "\n",
+    "Simply call `.fit()` to train. That's it! No need for mini-batching, saving, or complex backpropagation computations. That's all been done for you, as you're using a TensorFlow dataset with the batches specified already. You do have the option to specify epoch number or minibatch size if you like (for example, in the case of an un-batched dataset)."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 143,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Epoch 1/10\n",
+      "38/38 [==============================] - 4s 95ms/step - loss: 1.3761 - accuracy: 0.6900\n",
+      "Epoch 2/10\n",
+      "38/38 [==============================] - 4s 97ms/step - loss: 0.3148 - accuracy: 0.8817\n",
+      "Epoch 3/10\n",
+      "38/38 [==============================] - 4s 100ms/step - loss: 0.1639 - accuracy: 0.9300\n",
+      "Epoch 4/10\n",
+      "38/38 [==============================] - 4s 97ms/step - loss: 0.2578 - accuracy: 0.9067\n",
+      "Epoch 5/10\n",
+      "38/38 [==============================] - 4s 98ms/step - loss: 0.1926 - accuracy: 0.9233\n",
+      "Epoch 6/10\n",
+      "38/38 [==============================] - 4s 100ms/step - loss: 0.0995 - accuracy: 0.9650\n",
+      "Epoch 7/10\n",
+      "38/38 [==============================] - 4s 97ms/step - loss: 0.2125 - accuracy: 0.9267\n",
+      "Epoch 8/10\n",
+      "38/38 [==============================] - 4s 98ms/step - loss: 0.1216 - accuracy: 0.9600\n",
+      "Epoch 9/10\n",
+      "38/38 [==============================] - 4s 97ms/step - loss: 0.0977 - accuracy: 0.9633\n",
+      "Epoch 10/10\n",
+      "38/38 [==============================] - 4s 98ms/step - loss: 0.0580 - accuracy: 0.9833\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "<tensorflow.python.keras.callbacks.History at 0x7f2b5dc4d910>"
+      ]
+     },
+     "execution_count": 143,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "happy_model.fit(X_train, Y_train, epochs=10, batch_size=16)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "After that completes, just use `.evaluate()` to evaluate against your test set. This function will print the value of the loss function and the performance metrics specified during the compilation of the model. In this case, the `binary_crossentropy` and the `accuracy` respectively."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 144,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "5/5 [==============================] - 0s 30ms/step - loss: 0.2241 - accuracy: 0.8933\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "[0.22406919300556183, 0.8933333158493042]"
+      ]
+     },
+     "execution_count": 144,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "happy_model.evaluate(X_test, Y_test)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Easy, right? But what if you need to build a model with shared layers, branches, or multiple inputs and outputs? This is where Sequential, with its beautifully simple yet limited functionality, won't be able to help you. \n",
+    "\n",
+    "Next up: Enter the Functional API, your slightly more complex, highly flexible friend.  "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a name='4'></a>\n",
+    "## 4 - The Functional API"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Welcome to the second half of the assignment, where you'll use Keras' flexible [Functional API](https://www.tensorflow.org/guide/keras/functional) to build a ConvNet that can differentiate between 6 sign language digits. \n",
+    "\n",
+    "The Functional API can handle models with non-linear topology, shared layers, as well as layers with multiple inputs or outputs. Imagine that, where the Sequential API requires the model to move in a linear fashion through its layers, the Functional API allows much more flexibility. Where Sequential is a straight line, a Functional model is a graph, where the nodes of the layers can connect in many more ways than one. \n",
+    "\n",
+    "In the visual example below, the one possible direction of the movement Sequential model is shown in contrast to a skip connection, which is just one of the many ways a Functional model can be constructed. A skip connection, as you might have guessed, skips some layer in the network and feeds the output to a later layer in the network. Don't worry, you'll be spending more time with skip connections very soon! "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<img src=\"images/seq_vs_func.png\" style=\"width:350px;height:200px;\">"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a name='4-1'></a>\n",
+    "### 4.1 - Load the SIGNS Dataset\n",
+    "\n",
+    "As a reminder, the SIGNS dataset is a collection of 6 signs representing numbers from 0 to 5."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 145,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Loading the data (signs)\n",
+    "X_train_orig, Y_train_orig, X_test_orig, Y_test_orig, classes = load_signs_dataset()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<img src=\"images/SIGNS.png\" style=\"width:800px;height:300px;\">\n",
+    "\n",
+    "The next cell will show you an example of a labelled image in the dataset. Feel free to change the value of `index` below and re-run to see different examples. "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 146,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "y = 4\n"
+     ]
+    },
+    {
+     "data": {
+      "image/png": "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\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "# Example of an image from the dataset\n",
+    "index = 9\n",
+    "plt.imshow(X_train_orig[index])\n",
+    "print (\"y = \" + str(np.squeeze(Y_train_orig[:, index])))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a name='4-2'></a>\n",
+    "### 4.2 - Split the Data into Train/Test Sets\n",
+    "\n",
+    "In Course 2, you built a fully-connected network for this dataset. But since this is an image dataset, it is more natural to apply a ConvNet to it.\n",
+    "\n",
+    "To get started, let's examine the shapes of your data. "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 147,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "number of training examples = 1080\n",
+      "number of test examples = 120\n",
+      "X_train shape: (1080, 64, 64, 3)\n",
+      "Y_train shape: (1080, 6)\n",
+      "X_test shape: (120, 64, 64, 3)\n",
+      "Y_test shape: (120, 6)\n"
+     ]
+    }
+   ],
+   "source": [
+    "X_train = X_train_orig/255.\n",
+    "X_test = X_test_orig/255.\n",
+    "Y_train = convert_to_one_hot(Y_train_orig, 6).T\n",
+    "Y_test = convert_to_one_hot(Y_test_orig, 6).T\n",
+    "print (\"number of training examples = \" + str(X_train.shape[0]))\n",
+    "print (\"number of test examples = \" + str(X_test.shape[0]))\n",
+    "print (\"X_train shape: \" + str(X_train.shape))\n",
+    "print (\"Y_train shape: \" + str(Y_train.shape))\n",
+    "print (\"X_test shape: \" + str(X_test.shape))\n",
+    "print (\"Y_test shape: \" + str(Y_test.shape))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a name='4-3'></a>\n",
+    "### 4.3 - Forward Propagation\n",
+    "\n",
+    "In TensorFlow, there are built-in functions that implement the convolution steps for you. By now, you should be familiar with how TensorFlow builds computational graphs. In the [Functional API](https://www.tensorflow.org/guide/keras/functional), you create a graph of layers. This is what allows such great flexibility.\n",
+    "\n",
+    "However, the following model could also be defined using the Sequential API since the information flow is on a single line. But don't deviate. What we want you to learn is to use the functional API.\n",
+    "\n",
+    "Begin building your graph of layers by creating an input node that functions as a callable object:\n",
+    "\n",
+    "- **input_img = tf.keras.Input(shape=input_shape):** \n",
+    "\n",
+    "Then, create a new node in the graph of layers by calling a layer on the `input_img` object: \n",
+    "\n",
+    "- **tf.keras.layers.Conv2D(filters= ... , kernel_size= ... , padding='same')(input_img):** Read the full documentation on [Conv2D](https://www.tensorflow.org/api_docs/python/tf/keras/layers/Conv2D).\n",
+    "\n",
+    "- **tf.keras.layers.MaxPool2D(pool_size=(f, f), strides=(s, s), padding='same'):** `MaxPool2D()` downsamples your input using a window of size (f, f) and strides of size (s, s) to carry out max pooling over each window.  For max pooling, you usually operate on a single example at a time and a single channel at a time. Read the full documentation on [MaxPool2D](https://www.tensorflow.org/api_docs/python/tf/keras/layers/MaxPool2D).\n",
+    "\n",
+    "- **tf.keras.layers.ReLU():** computes the elementwise ReLU of Z (which can be any shape). You can read the full documentation on [ReLU](https://www.tensorflow.org/api_docs/python/tf/keras/layers/ReLU).\n",
+    "\n",
+    "- **tf.keras.layers.Flatten()**: given a tensor \"P\", this function takes each training (or test) example in the batch and flattens it into a 1D vector.  \n",
+    "\n",
+    "    * If a tensor P has the shape (batch_size,h,w,c), it returns a flattened tensor with shape (batch_size, k), where $k=h \\times w \\times c$.  \"k\" equals the product of all the dimension sizes other than the first dimension.\n",
+    "    \n",
+    "    * For example, given a tensor with dimensions [100, 2, 3, 4], it flattens the tensor to be of shape [100, 24], where 24 = 2 * 3 * 4.  You can read the full documentation on [Flatten](https://www.tensorflow.org/api_docs/python/tf/keras/layers/Flatten).\n",
+    "\n",
+    "- **tf.keras.layers.Dense(units= ... , activation='softmax')(F):** given the flattened input F, it returns the output computed using a fully connected layer. You can read the full documentation on [Dense](https://www.tensorflow.org/api_docs/python/tf/keras/layers/Dense).\n",
+    "\n",
+    "In the last function above (`tf.keras.layers.Dense()`), the fully connected layer automatically initializes weights in the graph and keeps on training them as you train the model. Hence, you did not need to initialize those weights when initializing the parameters.\n",
+    "\n",
+    "Lastly, before creating the model, you'll need to define the output using the last of the function's compositions (in this example, a Dense layer): \n",
+    "\n",
+    "- **outputs = tf.keras.layers.Dense(units=6, activation='softmax')(F)**\n",
+    "\n",
+    "\n",
+    "#### Window, kernel, filter, pool\n",
+    "\n",
+    "The words \"kernel\" and \"filter\" are used to refer to the same thing. The word \"filter\" accounts for the amount of \"kernels\" that will be used in a single convolution layer. \"Pool\" is the name of the operation that takes the max or average value of the kernels. \n",
+    "\n",
+    "This is why the parameter `pool_size` refers to `kernel_size`, and you use `(f,f)` to refer to the filter size. \n",
+    "\n",
+    "Pool size and kernel size refer to the same thing in different objects - They refer to the shape of the window where the operation takes place. "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a name='ex-2'></a>\n",
+    "### Exercise 2 - convolutional_model\n",
+    "\n",
+    "Implement the `convolutional_model` function below to build the following model: `CONV2D -> RELU -> MAXPOOL -> CONV2D -> RELU -> MAXPOOL -> FLATTEN -> DENSE`. Use the functions above! \n",
+    "\n",
+    "Also, plug in the following parameters for all the steps:\n",
+    "\n",
+    " - [Conv2D](https://www.tensorflow.org/api_docs/python/tf/keras/layers/Conv2D): Use 8 4 by 4 filters, stride 1, padding is \"SAME\"\n",
+    " - [ReLU](https://www.tensorflow.org/api_docs/python/tf/keras/layers/ReLU)\n",
+    " - [MaxPool2D](https://www.tensorflow.org/api_docs/python/tf/keras/layers/MaxPool2D): Use an 8 by 8 filter size and an 8 by 8 stride, padding is \"SAME\"\n",
+    " - **Conv2D**: Use 16 2 by 2 filters, stride 1, padding is \"SAME\"\n",
+    " - **ReLU**\n",
+    " - **MaxPool2D**: Use a 4 by 4 filter size and a 4 by 4 stride, padding is \"SAME\"\n",
+    " - [Flatten](https://www.tensorflow.org/api_docs/python/tf/keras/layers/Flatten) the previous output.\n",
+    " - Fully-connected ([Dense](https://www.tensorflow.org/api_docs/python/tf/keras/layers/Dense)) layer: Apply a fully connected layer with 6 neurons and a softmax activation. "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 148,
+   "metadata": {
+    "deletable": false,
+    "nbgrader": {
+     "cell_type": "code",
+     "checksum": "f58643806aa8380c96225fc8b4c5e7aa",
+     "grade": false,
+     "grade_id": "cell-dac51744a9e03f51",
+     "locked": false,
+     "schema_version": 3,
+     "solution": true,
+     "task": false
+    }
+   },
+   "outputs": [],
+   "source": [
+    "# GRADED FUNCTION: convolutional_model\n",
+    "\n",
+    "def convolutional_model(input_shape):\n",
+    "    \"\"\"\n",
+    "    Implements the forward propagation for the model:\n",
+    "    CONV2D -> RELU -> MAXPOOL -> CONV2D -> RELU -> MAXPOOL -> FLATTEN -> DENSE\n",
+    "    \n",
+    "    Note that for simplicity and grading purposes, you'll hard-code some values\n",
+    "    such as the stride and kernel (filter) sizes. \n",
+    "    Normally, functions should take these values as function parameters.\n",
+    "    \n",
+    "    Arguments:\n",
+    "    input_img -- input dataset, of shape (input_shape)\n",
+    "\n",
+    "    Returns:\n",
+    "    model -- TF Keras model (object containing the information for the entire training process) \n",
+    "    \"\"\"\n",
+    "    input_img = tf.keras.Input(shape=input_shape)\n",
+    "\n",
+    "    ## CONV2D: 8 filters 4x4, stride of 1, padding 'SAME'\n",
+    "    Z1 = tf.keras.layers.Conv2D(filters = 8,kernel_size=(4,4), strides = (1,1), padding='SAME')\n",
+    "    ## RELU\n",
+    "    A1 = tf.keras.layers.ReLU()\n",
+    "    ## MAXPOOL: window 8x8, stride 8, padding 'SAME'\n",
+    "    P1 = tf.keras.layers.MaxPool2D(pool_size=(8, 8), strides=8, padding='SAME')\n",
+    "    ## CONV2D: 16 filters 2x2, stride 1, padding 'SAME'\n",
+    "    Z2 = tf.keras.layers.Conv2D(filters = 16,kernel_size=(2,2), strides = (1,1), padding='SAME')\n",
+    "    ## RELU\n",
+    "    A2 = tf.keras.layers.ReLU()\n",
+    "    ## MAXPOOL: window 4x4, stride 4, padding 'SAME'\n",
+    "    P2 = tf.keras.layers.MaxPool2D(pool_size=(4, 4), strides=4, padding='SAME')\n",
+    "    ## FLATTEN\n",
+    "    F = tf.keras.layers.Flatten()\n",
+    "    ## Dense layer\n",
+    "    ## 6 neurons in output layer. Hint: one of the arguments should be \"activation='softmax'\" \n",
+    "    \n",
+    "    outputs = tf.keras.layers.Conv2D(filters = 8,kernel_size=(4,4), strides = (1,1), padding='SAME')(input_img)\n",
+    "    # YOUR CODE STARTS HERE\n",
+    "    \n",
+    "    \n",
+    "    # YOUR CODE ENDS HERE\n",
+    "    model = tf.keras.Model(inputs=input_img, outputs=outputs)\n",
+    "    \n",
+    "    return model"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 149,
+   "metadata": {
+    "deletable": false,
+    "editable": false,
+    "nbgrader": {
+     "cell_type": "code",
+     "checksum": "483d626949930a0b0ef20997e7c6ba72",
+     "grade": true,
+     "grade_id": "cell-45d22e92042174c9",
+     "locked": true,
+     "points": 10,
+     "schema_version": 3,
+     "solution": false,
+     "task": false
+    }
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Model: \"functional_40\"\n",
+      "_________________________________________________________________\n",
+      "Layer (type)                 Output Shape              Param #   \n",
+      "=================================================================\n",
+      "input_28 (InputLayer)        [(None, 64, 64, 3)]       0         \n",
+      "_________________________________________________________________\n",
+      "conv2d_72 (Conv2D)           (None, 64, 64, 8)         392       \n",
+      "=================================================================\n",
+      "Total params: 392\n",
+      "Trainable params: 392\n",
+      "Non-trainable params: 0\n",
+      "_________________________________________________________________\n",
+      "\u001b[32mAll tests passed!\u001b[0m\n"
+     ]
+    }
+   ],
+   "source": [
+    "conv_model = convolutional_model((64, 64, 3))\n",
+    "conv_model.compile(optimizer='adam',\n",
+    "                  loss='categorical_crossentropy',\n",
+    "                  metrics=['accuracy'])\n",
+    "conv_model.summary()\n",
+    "    \n",
+    "output = [['InputLayer', [(None, 64, 64, 3)], 0],\n",
+    "        ['Conv2D', (None, 64, 64, 8), 392, 'same', 'linear', 'GlorotUniform'],\n",
+    "        ['ReLU', (None, 64, 64, 8), 0],\n",
+    "        ['MaxPooling2D', (None, 8, 8, 8), 0, (8, 8), (8, 8), 'same'],\n",
+    "        ['Conv2D', (None, 8, 8, 16), 528, 'same', 'linear', 'GlorotUniform'],\n",
+    "        ['ReLU', (None, 8, 8, 16), 0],\n",
+    "        ['MaxPooling2D', (None, 2, 2, 16), 0, (4, 4), (4, 4), 'same'],\n",
+    "        ['Flatten', (None, 64), 0],\n",
+    "        ['Dense', (None, 6), 390, 'softmax']]\n",
+    "    \n",
+    "comparator(summary(conv_model), output)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Both the Sequential and Functional APIs return a TF Keras model object. The only difference is how inputs are handled inside the object model! "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a name='4-4'></a>\n",
+    "### 4.4 - Train the Model"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 150,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Epoch 1/100\n"
+     ]
+    },
+    {
+     "ename": "ValueError",
+     "evalue": "in user code:\n\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/engine/training.py:806 train_function  *\n        return step_function(self, iterator)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/engine/training.py:796 step_function  **\n        outputs = model.distribute_strategy.run(run_step, args=(data,))\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/distribute/distribute_lib.py:1211 run\n        return self._extended.call_for_each_replica(fn, args=args, kwargs=kwargs)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/distribute/distribute_lib.py:2585 call_for_each_replica\n        return self._call_for_each_replica(fn, args, kwargs)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/distribute/distribute_lib.py:2945 _call_for_each_replica\n        return fn(*args, **kwargs)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/engine/training.py:789 run_step  **\n        outputs = model.train_step(data)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/engine/training.py:749 train_step\n        y, y_pred, sample_weight, regularization_losses=self.losses)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/engine/compile_utils.py:204 __call__\n        loss_value = loss_obj(y_t, y_p, sample_weight=sw)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/losses.py:149 __call__\n        losses = ag_call(y_true, y_pred)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/losses.py:253 call  **\n        return ag_fn(y_true, y_pred, **self._fn_kwargs)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/util/dispatch.py:201 wrapper\n        return target(*args, **kwargs)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/losses.py:1535 categorical_crossentropy\n        return K.categorical_crossentropy(y_true, y_pred, from_logits=from_logits)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/util/dispatch.py:201 wrapper\n        return target(*args, **kwargs)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/backend.py:4687 categorical_crossentropy\n        target.shape.assert_is_compatible_with(output.shape)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/framework/tensor_shape.py:1134 assert_is_compatible_with\n        raise ValueError(\"Shapes %s and %s are incompatible\" % (self, other))\n\n    ValueError: Shapes (None, 6) and (None, 64, 64, 8) are incompatible\n",
+     "output_type": "error",
+     "traceback": [
+      "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+      "\u001b[0;31mValueError\u001b[0m                                Traceback (most recent call last)",
+      "\u001b[0;32m<ipython-input-150-c0adbdb469a4>\u001b[0m in \u001b[0;36m<module>\u001b[0;34m\u001b[0m\n\u001b[1;32m      1\u001b[0m \u001b[0mtrain_dataset\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mtf\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mdata\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mDataset\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mfrom_tensor_slices\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mX_train\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mY_train\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mbatch\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;36m64\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m      2\u001b[0m \u001b[0mtest_dataset\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mtf\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mdata\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mDataset\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mfrom_tensor_slices\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mX_test\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mY_test\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mbatch\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;36m64\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m----> 3\u001b[0;31m \u001b[0mhistory\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mconv_model\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mfit\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mtrain_dataset\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mepochs\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0;36m100\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mvalidation_data\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0mtest_dataset\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m",
+      "\u001b[0;32m/opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/engine/training.py\u001b[0m in \u001b[0;36m_method_wrapper\u001b[0;34m(self, *args, **kwargs)\u001b[0m\n\u001b[1;32m    106\u001b[0m   \u001b[0;32mdef\u001b[0m \u001b[0m_method_wrapper\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m*\u001b[0m\u001b[0margs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    107\u001b[0m     \u001b[0;32mif\u001b[0m \u001b[0;32mnot\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_in_multi_worker_mode\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m  \u001b[0;31m# pylint: disable=protected-access\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 108\u001b[0;31m       \u001b[0;32mreturn\u001b[0m \u001b[0mmethod\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m*\u001b[0m\u001b[0margs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    109\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    110\u001b[0m     \u001b[0;31m# Running inside `run_distribute_coordinator` already.\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m/opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/engine/training.py\u001b[0m in \u001b[0;36mfit\u001b[0;34m(self, x, y, batch_size, epochs, verbose, callbacks, validation_split, validation_data, shuffle, class_weight, sample_weight, initial_epoch, steps_per_epoch, validation_steps, validation_batch_size, validation_freq, max_queue_size, workers, use_multiprocessing)\u001b[0m\n\u001b[1;32m   1096\u001b[0m                 batch_size=batch_size):\n\u001b[1;32m   1097\u001b[0m               \u001b[0mcallbacks\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mon_train_batch_begin\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mstep\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m-> 1098\u001b[0;31m               \u001b[0mtmp_logs\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mtrain_function\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0miterator\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m   1099\u001b[0m               \u001b[0;32mif\u001b[0m \u001b[0mdata_handler\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mshould_sync\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   1100\u001b[0m                 \u001b[0mcontext\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0masync_wait\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m/opt/conda/lib/python3.7/site-packages/tensorflow/python/eager/def_function.py\u001b[0m in \u001b[0;36m__call__\u001b[0;34m(self, *args, **kwds)\u001b[0m\n\u001b[1;32m    778\u001b[0m       \u001b[0;32melse\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    779\u001b[0m         \u001b[0mcompiler\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;34m\"nonXla\"\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 780\u001b[0;31m         \u001b[0mresult\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_call\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0margs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mkwds\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    781\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    782\u001b[0m       \u001b[0mnew_tracing_count\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_get_tracing_count\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m/opt/conda/lib/python3.7/site-packages/tensorflow/python/eager/def_function.py\u001b[0m in \u001b[0;36m_call\u001b[0;34m(self, *args, **kwds)\u001b[0m\n\u001b[1;32m    821\u001b[0m       \u001b[0;31m# This is the first call of __call__, so we have to initialize.\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    822\u001b[0m       \u001b[0minitializers\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;34m[\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 823\u001b[0;31m       \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_initialize\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0margs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mkwds\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0madd_initializers_to\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0minitializers\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    824\u001b[0m     \u001b[0;32mfinally\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    825\u001b[0m       \u001b[0;31m# At this point we know that the initialization is complete (or less\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m/opt/conda/lib/python3.7/site-packages/tensorflow/python/eager/def_function.py\u001b[0m in \u001b[0;36m_initialize\u001b[0;34m(self, args, kwds, add_initializers_to)\u001b[0m\n\u001b[1;32m    695\u001b[0m     self._concrete_stateful_fn = (\n\u001b[1;32m    696\u001b[0m         self._stateful_fn._get_concrete_function_internal_garbage_collected(  # pylint: disable=protected-access\n\u001b[0;32m--> 697\u001b[0;31m             *args, **kwds))\n\u001b[0m\u001b[1;32m    698\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    699\u001b[0m     \u001b[0;32mdef\u001b[0m \u001b[0minvalid_creator_scope\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0munused_args\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0munused_kwds\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m/opt/conda/lib/python3.7/site-packages/tensorflow/python/eager/function.py\u001b[0m in \u001b[0;36m_get_concrete_function_internal_garbage_collected\u001b[0;34m(self, *args, **kwargs)\u001b[0m\n\u001b[1;32m   2853\u001b[0m       \u001b[0margs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mkwargs\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;32mNone\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;32mNone\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   2854\u001b[0m     \u001b[0;32mwith\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_lock\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m-> 2855\u001b[0;31m       \u001b[0mgraph_function\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0m_\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0m_\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_maybe_define_function\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0margs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m   2856\u001b[0m     \u001b[0;32mreturn\u001b[0m \u001b[0mgraph_function\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   2857\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m/opt/conda/lib/python3.7/site-packages/tensorflow/python/eager/function.py\u001b[0m in \u001b[0;36m_maybe_define_function\u001b[0;34m(self, args, kwargs)\u001b[0m\n\u001b[1;32m   3211\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   3212\u001b[0m       \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_function_cache\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mmissed\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0madd\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mcall_context_key\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m-> 3213\u001b[0;31m       \u001b[0mgraph_function\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_create_graph_function\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0margs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m   3214\u001b[0m       \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_function_cache\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mprimary\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0mcache_key\u001b[0m\u001b[0;34m]\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mgraph_function\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   3215\u001b[0m       \u001b[0;32mreturn\u001b[0m \u001b[0mgraph_function\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0margs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mkwargs\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m/opt/conda/lib/python3.7/site-packages/tensorflow/python/eager/function.py\u001b[0m in \u001b[0;36m_create_graph_function\u001b[0;34m(self, args, kwargs, override_flat_arg_shapes)\u001b[0m\n\u001b[1;32m   3073\u001b[0m             \u001b[0marg_names\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0marg_names\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   3074\u001b[0m             \u001b[0moverride_flat_arg_shapes\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0moverride_flat_arg_shapes\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m-> 3075\u001b[0;31m             capture_by_value=self._capture_by_value),\n\u001b[0m\u001b[1;32m   3076\u001b[0m         \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_function_attributes\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   3077\u001b[0m         \u001b[0mfunction_spec\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mfunction_spec\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m/opt/conda/lib/python3.7/site-packages/tensorflow/python/framework/func_graph.py\u001b[0m in \u001b[0;36mfunc_graph_from_py_func\u001b[0;34m(name, python_func, args, kwargs, signature, func_graph, autograph, autograph_options, add_control_dependencies, arg_names, op_return_value, collections, capture_by_value, override_flat_arg_shapes)\u001b[0m\n\u001b[1;32m    984\u001b[0m         \u001b[0m_\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0moriginal_func\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mtf_decorator\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0munwrap\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mpython_func\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    985\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 986\u001b[0;31m       \u001b[0mfunc_outputs\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mpython_func\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0mfunc_args\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mfunc_kwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    987\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    988\u001b[0m       \u001b[0;31m# invariant: `func_outputs` contains only Tensors, CompositeTensors,\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m/opt/conda/lib/python3.7/site-packages/tensorflow/python/eager/def_function.py\u001b[0m in \u001b[0;36mwrapped_fn\u001b[0;34m(*args, **kwds)\u001b[0m\n\u001b[1;32m    598\u001b[0m         \u001b[0;31m# __wrapped__ allows AutoGraph to swap in a converted function. We give\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    599\u001b[0m         \u001b[0;31m# the function a weak reference to itself to avoid a reference cycle.\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 600\u001b[0;31m         \u001b[0;32mreturn\u001b[0m \u001b[0mweak_wrapped_fn\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m__wrapped__\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0margs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mkwds\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    601\u001b[0m     \u001b[0mweak_wrapped_fn\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mweakref\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mref\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mwrapped_fn\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    602\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m/opt/conda/lib/python3.7/site-packages/tensorflow/python/framework/func_graph.py\u001b[0m in \u001b[0;36mwrapper\u001b[0;34m(*args, **kwargs)\u001b[0m\n\u001b[1;32m    971\u001b[0m           \u001b[0;32mexcept\u001b[0m \u001b[0mException\u001b[0m \u001b[0;32mas\u001b[0m \u001b[0me\u001b[0m\u001b[0;34m:\u001b[0m  \u001b[0;31m# pylint:disable=broad-except\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    972\u001b[0m             \u001b[0;32mif\u001b[0m \u001b[0mhasattr\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0me\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m\"ag_error_metadata\"\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 973\u001b[0;31m               \u001b[0;32mraise\u001b[0m \u001b[0me\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mag_error_metadata\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mto_exception\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0me\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    974\u001b[0m             \u001b[0;32melse\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    975\u001b[0m               \u001b[0;32mraise\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;31mValueError\u001b[0m: in user code:\n\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/engine/training.py:806 train_function  *\n        return step_function(self, iterator)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/engine/training.py:796 step_function  **\n        outputs = model.distribute_strategy.run(run_step, args=(data,))\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/distribute/distribute_lib.py:1211 run\n        return self._extended.call_for_each_replica(fn, args=args, kwargs=kwargs)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/distribute/distribute_lib.py:2585 call_for_each_replica\n        return self._call_for_each_replica(fn, args, kwargs)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/distribute/distribute_lib.py:2945 _call_for_each_replica\n        return fn(*args, **kwargs)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/engine/training.py:789 run_step  **\n        outputs = model.train_step(data)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/engine/training.py:749 train_step\n        y, y_pred, sample_weight, regularization_losses=self.losses)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/engine/compile_utils.py:204 __call__\n        loss_value = loss_obj(y_t, y_p, sample_weight=sw)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/losses.py:149 __call__\n        losses = ag_call(y_true, y_pred)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/losses.py:253 call  **\n        return ag_fn(y_true, y_pred, **self._fn_kwargs)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/util/dispatch.py:201 wrapper\n        return target(*args, **kwargs)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/losses.py:1535 categorical_crossentropy\n        return K.categorical_crossentropy(y_true, y_pred, from_logits=from_logits)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/util/dispatch.py:201 wrapper\n        return target(*args, **kwargs)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/keras/backend.py:4687 categorical_crossentropy\n        target.shape.assert_is_compatible_with(output.shape)\n    /opt/conda/lib/python3.7/site-packages/tensorflow/python/framework/tensor_shape.py:1134 assert_is_compatible_with\n        raise ValueError(\"Shapes %s and %s are incompatible\" % (self, other))\n\n    ValueError: Shapes (None, 6) and (None, 64, 64, 8) are incompatible\n"
+     ]
+    }
+   ],
+   "source": [
+    "train_dataset = tf.data.Dataset.from_tensor_slices((X_train, Y_train)).batch(64)\n",
+    "test_dataset = tf.data.Dataset.from_tensor_slices((X_test, Y_test)).batch(64)\n",
+    "history = conv_model.fit(train_dataset, epochs=100, validation_data=test_dataset)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a name='5'></a>\n",
+    "## 5 - History Object \n",
+    "\n",
+    "The history object is an output of the `.fit()` operation, and provides a record of all the loss and metric values in memory. It's stored as a dictionary that you can retrieve at `history.history`: "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 151,
+   "metadata": {},
+   "outputs": [
+    {
+     "ename": "NameError",
+     "evalue": "name 'history' is not defined",
+     "output_type": "error",
+     "traceback": [
+      "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+      "\u001b[0;31mNameError\u001b[0m                                 Traceback (most recent call last)",
+      "\u001b[0;32m<ipython-input-151-6cd13d6a221b>\u001b[0m in \u001b[0;36m<module>\u001b[0;34m\u001b[0m\n\u001b[0;32m----> 1\u001b[0;31m \u001b[0mhistory\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mhistory\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m",
+      "\u001b[0;31mNameError\u001b[0m: name 'history' is not defined"
+     ]
+    }
+   ],
+   "source": [
+    "history.history"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Now visualize the loss over time using `history.history`: "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 152,
+   "metadata": {},
+   "outputs": [
+    {
+     "ename": "NameError",
+     "evalue": "name 'history' is not defined",
+     "output_type": "error",
+     "traceback": [
+      "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+      "\u001b[0;31mNameError\u001b[0m                                 Traceback (most recent call last)",
+      "\u001b[0;32m<ipython-input-152-55f5ebfbfb89>\u001b[0m in \u001b[0;36m<module>\u001b[0;34m\u001b[0m\n\u001b[1;32m      1\u001b[0m \u001b[0;31m# The history.history[\"loss\"] entry is a dictionary with as many values as epochs that the\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m      2\u001b[0m \u001b[0;31m# model was trained on.\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m----> 3\u001b[0;31m \u001b[0mdf_loss_acc\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mpd\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mDataFrame\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mhistory\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mhistory\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m      4\u001b[0m \u001b[0mdf_loss\u001b[0m\u001b[0;34m=\u001b[0m \u001b[0mdf_loss_acc\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;34m'loss'\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;34m'val_loss'\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m      5\u001b[0m \u001b[0mdf_loss\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mrename\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mcolumns\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0;34m{\u001b[0m\u001b[0;34m'loss'\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m'train'\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;34m'val_loss'\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m'validation'\u001b[0m\u001b[0;34m}\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0minplace\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0;32mTrue\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;31mNameError\u001b[0m: name 'history' is not defined"
+     ]
+    }
+   ],
+   "source": [
+    "# The history.history[\"loss\"] entry is a dictionary with as many values as epochs that the\n",
+    "# model was trained on. \n",
+    "df_loss_acc = pd.DataFrame(history.history)\n",
+    "df_loss= df_loss_acc[['loss','val_loss']]\n",
+    "df_loss.rename(columns={'loss':'train','val_loss':'validation'},inplace=True)\n",
+    "df_acc= df_loss_acc[['accuracy','val_accuracy']]\n",
+    "df_acc.rename(columns={'accuracy':'train','val_accuracy':'validation'},inplace=True)\n",
+    "df_loss.plot(title='Model loss',figsize=(12,8)).set(xlabel='Epoch',ylabel='Loss')\n",
+    "df_acc.plot(title='Model Accuracy',figsize=(12,8)).set(xlabel='Epoch',ylabel='Accuracy')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "**Congratulations**! You've finished the assignment and built two models: One that recognizes  smiles, and another that recognizes SIGN language with almost 80% accuracy on the test set. In addition to that, you now also understand the applications of two Keras APIs: Sequential and Functional. Nicely done! \n",
+    "\n",
+    "By now, you know a bit about how the Functional API works and may have glimpsed the possibilities. In your next assignment, you'll really get a feel for its power when you get the opportunity to build a very deep ConvNet, using ResNets! "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a name='6'></a>\n",
+    "## 6 - Bibliography\n",
+    "\n",
+    "You're always encouraged to read the official documentation. To that end, you can find the docs for the Sequential and Functional APIs here: \n",
+    "\n",
+    "https://www.tensorflow.org/guide/keras/sequential_model\n",
+    "\n",
+    "https://www.tensorflow.org/guide/keras/functional"
+   ]
+  }
+ ],
+ "metadata": {
+  "coursera": {
+   "course_slug": "convolutional-neural-networks",
+   "graded_item_id": "bwbJV",
+   "launcher_item_id": "0TkXB"
+  },
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.7.6"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
